@@ -3,7 +3,7 @@
 #!author=dst000000008
 
 [Script]
-X最高画质 = type=http-response,pattern=^https://video\.twimg\.com/.*\.m3u8,script-path=https://raw.githubusercontent.com/dst000000008/dst009/main/x-highest-quality.js,requires-body=true,timeout=15,tag=X最高画质
+X最高画质HLS = type=http-response,pattern=^https://video\.twimg\.com/.*\.m3u8,script-path=https://raw.githubusercontent.com/dst000000008/dst009/main/x-hls-quality.js,requires-body=true,timeout=15,tag=X最高画质HLS
 
 [MitM]
 hostname = video.twimg.com
