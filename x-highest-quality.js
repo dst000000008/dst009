@@ -1,50 +1,51 @@
 /*
- * X (Twitter) iOS 强制最高画质播放
- * 原理：MITM 拦截 X API 返回，把每条视频的低清晰度地址全部删掉、
- *      只留最高码率的 mp4，App 没得选，只能播最高画质。
+ * X (Twitter) iOS 强制最高画质 v2
  *
- * 配套 Loon 配置（加到你的配置里）：
+ * v1 有严重 bug：JSON.parse 会把 Twitter 的 64 位雪花 ID（推文/用户 ID）
+ * 转成 double 丢失精度，再写回去 ID 全错，导致「帖子暂时无法载入」。
+ * v2 改用正则做精准手术：只替换 video_info 里的 variants 数组，
+ * 其它字节原样不动。
  *
+ * 配套 Loon 配置：
  * [Script]
- * X最高画质 = type=http-response,pattern=^https://api\.(x|twitter)\.com/,script-path=<本脚本的URL>,requires-body=true,timeout=30
- *
+ * X最高画质 = type=http-response,pattern=^https://api\.(x|twitter)\.com/,script-path=https://raw.githubusercontent.com/dst000000008/dst009/main/x-highest-quality.js,requires-body=true,timeout=30
  * [MitM]
- * hostname = %APPEND% api.x.com, api.twitter.com
+ * hostname = api.x.com, api.twitter.com
  */
 
-function keepHighestQuality(node) {
-  if (!node || typeof node !== 'object') return;
-  if (Array.isArray(node)) {
-    for (const item of node) keepHighestQuality(item);
-    return;
-  }
-  for (const key of Object.keys(node)) {
-    const val = node[key];
-    if (key === 'video_info' && val && Array.isArray(val.variants)) {
-      const mp4s = val.variants.filter(
-        v => v && v.content_type === 'video/mp4' && typeof v.bitrate === 'number'
-      );
-      // 只有多清晰度时才动手，单清晰度视频原样放行
-      if (mp4s.length > 1) {
-        mp4s.sort((a, b) => b.bitrate - a.bitrate);
-        val.variants = [mp4s[0]];
-      }
-    } else if (val && typeof val === 'object') {
-      keepHighestQuality(val);
+function highestMp4(inner) {
+  const objs = inner.match(/\{[^{}]*\}/g) || [];
+  let best = null, mp4count = 0;
+  for (const o of objs) {
+    const mB = o.match(/"bitrate":(\d+)/);
+    const mC = o.match(/"content_type":"video\/mp4"/);
+    const mU = o.match(/"url":"((?:[^"\\]|\\.)*)"/);
+    if (mB && mC && mU) {
+      mp4count++;
+      const br = parseInt(mB[1], 10);
+      if (!best || br > best.br) best = { br, raw: o };
     }
   }
+  return mp4count > 1 ? best : null;
 }
 
-try {
-  const raw = $response.body;
-  if (raw) {
-    const data = JSON.parse(raw);
-    keepHighestQuality(data);
-    $done({ body: JSON.stringify(data) });
-  } else {
-    $done({});
-  }
-} catch (e) {
-  // 解析失败就原样放行，绝不影响正常刷 X
-  $done({});
+function main() {
+  let body = null;
+  try { body = $response.body; } catch (e) { $done({}); return; }
+  // 没有视频信息的响应直接放行，不浪费时间
+  if (!body || body.indexOf('video_info') === -1) { $done({}); return; }
+
+  let changed = false;
+  const out = body.replace(
+    /"video_info":\{[^}]*?"variants":\[([^\]]*)\]/g,
+    (full, inner) => {
+      const best = highestMp4(inner);
+      if (!best) return full;
+      changed = true;
+      return full.replace(inner, best.raw);
+    }
+  );
+  $done(changed ? { body: out } : {});
 }
+
+main();
