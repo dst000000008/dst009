@@ -1,51 +1,39 @@
 /*
- * X (Twitter) iOS 强制最高画质 v2
+ * X (Twitter) iOS 强制最高画质 v3 —— HLS 方案
  *
- * v1 有严重 bug：JSON.parse 会把 Twitter 的 64 位雪花 ID（推文/用户 ID）
- * 转成 double 丢失精度，再写回去 ID 全错，导致「帖子暂时无法载入」。
- * v2 改用正则做精准手术：只替换 video_info 里的 variants 数组，
- * 其它字节原样不动。
+ * v1/v2 走 API (api.x.com) 重写 variants，但 X App 对 API 做了证书锁定，
+ * MITM 直接导致 App 无法联网，此路不通。
+ * v3 换思路：X App 用 HLS (m3u8) 播视频，视频文件走 video.twimg.com CDN
+ * （无证书锁定）。拦截 master 播放列表，只留最高码率一档，
+ * 播放器没得选，只能播最高清。
  *
  * 配套 Loon 配置：
  * [Script]
- * X最高画质 = type=http-response,pattern=^https://api\.(x|twitter)\.com/,script-path=https://raw.githubusercontent.com/dst000000008/dst009/main/x-highest-quality.js,requires-body=true,timeout=30
+ * X最高画质 = type=http-response,pattern=^https://video\.twimg\.com/.*\.m3u8,script-path=https://raw.githubusercontent.com/dst000000008/dst009/main/x-highest-quality.js,requires-body=true,timeout=15
  * [MitM]
- * hostname = api.x.com, api.twitter.com
+ * hostname = video.twimg.com
  */
-
-function highestMp4(inner) {
-  const objs = inner.match(/\{[^{}]*\}/g) || [];
-  let best = null, mp4count = 0;
-  for (const o of objs) {
-    const mB = o.match(/"bitrate":(\d+)/);
-    const mC = o.match(/"content_type":"video\/mp4"/);
-    const mU = o.match(/"url":"((?:[^"\\]|\\.)*)"/);
-    if (mB && mC && mU) {
-      mp4count++;
-      const br = parseInt(mB[1], 10);
-      if (!best || br > best.br) best = { br, raw: o };
-    }
-  }
-  return mp4count > 1 ? best : null;
-}
 
 function main() {
   let body = null;
   try { body = $response.body; } catch (e) { $done({}); return; }
-  // 没有视频信息的响应直接放行，不浪费时间
-  if (!body || body.indexOf('video_info') === -1) { $done({}); return; }
+  // 只处理 master 播放列表（media 播放列表没有 STREAM-INF，直接放行）
+  if (!body || body.indexOf('#EXT-X-STREAM-INF') === -1) { $done({}); return; }
 
-  let changed = false;
-  const out = body.replace(
-    /"video_info":\{[^}]*?"variants":\[([^\]]*)\]/g,
-    (full, inner) => {
-      const best = highestMp4(inner);
-      if (!best) return full;
-      changed = true;
-      return full.replace(inner, best.raw);
+  const lines = body.split('\n');
+  let bestBw = -1, bestIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/BANDWIDTH=(\d+)/);
+    if (m) {
+      const bw = parseInt(m[1], 10);
+      if (bw > bestBw) { bestBw = bw; bestIdx = i; }
     }
-  );
-  $done(changed ? { body: out } : {});
+  }
+  if (bestIdx < 0 || !lines[bestIdx + 1]) { $done({}); return; }
+
+  // 只保留最高码率一档：STREAM-INF 行 + 下一行的分片列表 URL
+  const out = '#EXTM3U\n' + lines[bestIdx] + '\n' + lines[bestIdx + 1].trim() + '\n';
+  $done({ body: out });
 }
 
 main();
