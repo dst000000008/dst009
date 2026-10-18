@@ -1,9 +1,9 @@
 #!name=X 最高画质
-#!desc=强制 X (Twitter) iOS 客户端视频以最高清晰度播放（HLS 方案）
+#!desc=强制 X (Twitter) iOS 客户端视频以最高码率播放（分片重定向方案）
 #!author=dst000000008
 
 [Script]
-X最高画质HLS = type=http-response,pattern=^https://video\.twimg\.com/.*\.m3u8,script-path=https://raw.githubusercontent.com/dst000000008/dst009/main/x-hls-quality.js,requires-body=true,timeout=15,tag=X最高画质HLS
+X码率重定向 = type=http-request,pattern=^https://video\.twimg\.com/.*/vid/avc1/,script-path=https://raw.githubusercontent.com/dst000000008/dst009/main/x-tier-redirect.js,timeout=15,tag=X码率重定向
 
 [MitM]
 hostname = video.twimg.com
