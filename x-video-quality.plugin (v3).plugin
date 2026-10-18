@@ -1,9 +1,0 @@
-#!name=X 最高画质
-#!desc=强制 X (Twitter) iOS 客户端视频以最高清晰度播放
-#!author=dst000000008
-
-[Script]
-X最高画质 = type=http-response,pattern=^https://(api\.(x|twitter)\.com|x\.com/i/api)/,script-path=https://raw.githubusercontent.com/dst000000008/dst009/main/x-highest-quality.js,requires-body=true,timeout=30,tag=X最高画质
-
-[MitM]
-hostname = api.x.com, api.twitter.com, x.com
