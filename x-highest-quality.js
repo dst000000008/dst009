@@ -1,4 +1,4 @@
-/*
+
  * X (Twitter) iOS 强制最高画质 v2
  *
  * v1 有严重 bug：JSON.parse 会把 Twitter 的 64 位雪花 ID（推文/用户 ID）
